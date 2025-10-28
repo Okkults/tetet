@@ -1,0 +1,219 @@
+Perfect. I’m going to give you two things:
+Quick rundown of what we’re building.
+A copy-paste “builder prompt” you can drop into Cursor / Replit / your code assistant so it generates the full CLI app for you.
+1. What we’re building
+Goal: no web UI, no copy/paste games. You sit in Terminal, you give it:
+an image (your screenshot of the option chain / tape / etc.)
+a text prompt (your analysis instruction)
+The script sends both to the vision model using your API key, and the terminal prints the model’s answer. That answer is what you'll feed to your trading executor (“LONG”, “SHORT”, etc).
+Flow:
+You run:
+python c113_cli.py --image ./screens/snap_1035.png --prompt "Read this chain and tell me ONLY LONG or SHORT."
+Script:
+base64-encodes the image file
+calls the AI endpoint with your API key
+gets the response text
+(optionally) post-processes it so it’s just LONG or SHORT in all caps
+Output:
+SHORT
+Now you (or later, your macro) can pipe that text straight into the trade command.
+Tech assumptions this prompt is going to force:
+Python 3.11+
+requests, argparse, python-dotenv
+Uses your Google-style API key (the one you gave: AIzaSyBxjSemr-JesFQPfKrLP2FtR8oxsMu4Rdw) to call a multimodal vision model (Gemini-style .../generateContent endpoint that accepts text + image).
+Reads the key from .env so you’re not hardcoding it in the file.
+Clean repo layout:
+c113_cli.py (main executable)
+ai_client.py (network call)
+utils.py (image encoder + output cleanup)
+config.py (load env)
+requirements.txt
+README.md
+.env (holds the key, NOT committed to git)
+After this, you’ll be able to trigger AI inference → trading decision in one shot from Terminal.
+2. Copy/paste this into your code agent (Cursor, Windsurf, etc.)
+This is the full build spec. Don’t edit it unless you know why you’re editing it:
+You are building me a tiny local command-line app called "c113-cli".
+
+MISSION
+I want to run AI inference (image + text prompt) from my Mac Terminal instead of using a web UI. I will point it at a screenshot and give it instructions like "tell me LONG or SHORT". The CLI should call a multimodal vision model using my API key and print the answer to stdout FAST. No web frontend, no browser.
+
+TECH STACK
+- Language: Python 3.11+
+- Libraries: requests, argparse, python-dotenv, base64, os, json, sys, time
+- No frameworks, no web server, no async needed.
+- Only standard Python + lightweight HTTP.
+
+FOLDER / FILE LAYOUT
+Create this exact repo structure:
+
+c113-cli/
+  README.md
+  requirements.txt
+  .env                # DO NOT COMMIT. holds my API key.
+  config.py
+  utils.py
+  ai_client.py
+  c113_cli.py         # main entry point I run in Terminal
+
+REQUIREMENTS
+Put this in requirements.txt:
+requests
+python-dotenv
+
+ENV / API KEY
+I have a Google-style API key. Here are the details I gave you:
+API Key: AIzaSyBxjSemr-JesFQPfKrLP2FtR8oxsMu4Rdw
+Name: test
+Project name: projects/582740701987
+Project number: 582740701987
+
+In .env I will manually paste:
+GOOGLE_API_KEY=AIzaSyBxjSemr-JesFQPfKrLP2FtR8oxsMu4Rdw
+
+IMPORTANT:
+- Never hardcode the key in the Python files.
+- Always load it from env.
+
+CONFIG LOADER (config.py)
+Write a small helper that:
+1. loads .env using python-dotenv
+2. exposes get_api_key() which returns GOOGLE_API_KEY
+3. if the key is missing or empty, print a clear error and exit with nonzero code
+
+MULTIMODAL CALL
+We'll assume a Gemini-style multimodal endpoint that accepts text plus an inline base64 image and returns JSON with the model output in `candidates[0].content.parts[0].text`.
+
+Use this endpoint shape:
+POST https://generativelanguage.googleapis.com/v1beta/models/gemini-pro-vision:generateContent?key={API_KEY}
+
+Request JSON body format (build this for me in ai_client.py):
+{
+  "contents": [
+    {
+      "parts": [
+        { "text": "<USER_PROMPT_GOES_HERE>" },
+        {
+          "inline_data": {
+            "mime_type": "<IMAGE_MIME_TYPE>",
+            "data": "<BASE64_IMAGE_DATA>"
+          }
+        }
+      ]
+    }
+  ]
+}
+
+Assume mime_type based on file extension:
+- .png  -> "image/png"
+- .jpg/.jpeg -> "image/jpeg"
+- default -> "image/png" if unsure
+
+The ai_client.py file must expose a function:
+
+def run_multimodal_inference(api_key: str, prompt: str, image_path: str) -> dict:
+    """
+    - Read the image_path, base64-encode it.
+    - Infer mime type.
+    - Build the request JSON exactly like above.
+    - POST to the endpoint using requests.
+    - Return the parsed JSON (as Python dict).
+    - If HTTP status not 200, raise RuntimeError with status code + body.
+    """
+
+UTILS
+In utils.py create:
+1. def encode_image_to_base64(image_path: str) -> tuple[str, str]:
+   - open file in rb
+   - base64.b64encode -> decode('utf-8')
+   - guess mime type from extension
+   - return (base64_str, mime_type)
+
+2. def extract_text_from_response(resp: dict) -> str:
+   - The model response shape we expect is:
+     resp["candidates"][0]["content"]["parts"][0]["text"]
+   - Be defensive: if that path doesn't exist, return "".
+   - Strip whitespace.
+
+3. def reduce_to_decision(raw: str) -> str:
+   - Goal: convert whatever the model said into a single uppercase keyword
+     mainly "LONG" or "SHORT".
+   - Logic:
+        lower_raw = raw.lower()
+        if "long" in lower_raw and "short" not in lower_raw:
+            return "LONG"
+        if "short" in lower_raw and "long" not in lower_raw:
+            return "SHORT"
+        # fallback:
+        # return the first line uppercased, max 60 chars
+   - Always return a string with no newlines.
+
+MAIN CLI ENTRYPOINT (c113_cli.py)
+This is what I will actually run.
+
+Requirements:
+- Use argparse with these args:
+    --image (str, required) path to screenshot file
+    --prompt (str, required) the instruction I want to send to AI
+    --mode (str, optional) either:
+        "raw"      -> print full model text
+        "decision" -> print reduced_to_decision() output
+      default "decision"
+
+Flow in main():
+1. start timer = time.time()
+2. load api_key = get_api_key()
+3. call run_multimodal_inference(api_key, prompt, image_path)
+4. parse model_text = extract_text_from_response(resp)
+5. if mode=="decision": final = reduce_to_decision(model_text)
+   else: final = model_text.strip()
+6. print ONLY the final string to stdout (no labels, no extra words)
+7. also print to stderr (not stdout) how long it took in seconds, like:
+   "[latency 1.82s]" so I can measure speed. Use sys.stderr.write().
+8. exit 0; if any exception, print error to stderr and exit 1.
+
+Make sure c113_cli.py has:
+if __name__ == "__main__":
+    main()
+
+README.md
+Write a README.md that teaches me (like I'm brand new) these exact steps:
+
+1. Install Python 3.11+
+2. Clone / open this folder
+3. Create a virtual env and activate it
+4. pip install -r requirements.txt
+5. Create a file called .env in the project root with:
+   GOOGLE_API_KEY=AIzaSyBxjSemr-JesFQPfKrLP2FtR8oxsMu4Rdw
+6. Run a test command:
+   python c113_cli.py \
+     --image ./sample.png \
+     --prompt "Read this screenshot and tell me ONLY LONG or SHORT. Say just one word." \
+     --mode decision
+
+7. Expected terminal output should be something like:
+   LONG
+
+8. Explain that I can change --mode raw if I want the full paragraph answer instead of just LONG/SHORT.
+
+CODE QUALITY RULES
+- Add type hints everywhere.
+- Add short docstrings to every function.
+- Handle errors cleanly (bad path, missing env, non-200 HTTP).
+- Do not print the API key to console ever.
+- Do not add any GUI code, Flask, FastAPI, etc.
+- Do NOT add background daemons or async loops. It's a one-shot call per run.
+- Keep latency timing simple with time.time().
+
+FINAL DELIVERABLE
+At the end, you will output ALL of these files completely:
+- README.md
+- requirements.txt
+- config.py
+- utils.py
+- ai_client.py
+- c113_cli.py
+
+I should be able to copy those into a new folder called c113-cli, create my .env, install requirements, and immediately run the CLI.
+
+That’s it. Build it now.
