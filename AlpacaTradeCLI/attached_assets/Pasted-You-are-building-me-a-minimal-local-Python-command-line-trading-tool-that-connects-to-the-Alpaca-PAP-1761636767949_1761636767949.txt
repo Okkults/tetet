@@ -1,0 +1,103 @@
+You are building me a minimal local Python command-line trading tool that connects to the Alpaca PAPER trading API.
+
+Goal:
+I want to be able to run `python3 main.py`, then type a single word like `long` or `short` into the terminal, hit Enter, and have the order submit to Alpaca immediately (under 1 second). No confirmation questions, no menus. I will be typing fast during live trading so this must be instant.
+
+Project requirements:
+
+1. Project layout:
+
+* config.py
+* broker.py
+* main.py
+* requirements.txt
+* README.md
+
+2. Behavior:
+
+* The script will target SPY by default, quantity 1 share by default. Put these two values in one obvious place at the top of broker.py so I can change them later.
+* When I type `long` and hit Enter:
+
+  * Submit a MARKET BUY for that symbol and quantity to Alpaca (DAY order).
+* When I type `short` and hit Enter:
+
+  * Submit a MARKET SELL SHORT for that symbol and quantity to Alpaca (DAY order).
+* After sending the order, print the order id and status (like `submitted`, `filled`, etc.).
+* After each command, keep listening for the next word. I should be able to type long / short repeatedly without restarting the script.
+* If I type anything else, just print `unknown command` and keep listening.
+
+3. Speed / UX rules (this is VERY important):
+
+* Do NOT ask me "are you sure?"
+* Do NOT pause/sleep.
+* Do NOT make me type ticker or qty each time. Hardcode them in one place.
+* I just type `long` or `short` and press Enter. That's it.
+* Execution should be just a normal blocking Python REPL-style input() loop.
+
+4. Alpaca connection:
+
+* Use the official Alpaca Trading API (REST endpoint) for paper trading.
+
+* Put the credentials in config.py as variables:
+  ALPACA_API_KEY = "<YOUR_API_KEY>"
+  ALPACA_SECRET_KEY = "<YOUR_SECRET_KEY>"
+  ALPACA_BASE_URL = "<ACCOUNT_URL>"
+  I will manually paste in my keys later. DO NOT inline secrets anywhere else.
+
+* broker.py should create a client/session using those values and expose two functions:
+  def go_long():
+  """Send market buy for SYMBOL x QTY, return order response dict"""
+  def go_short():
+  """Send market sell/short for SYMBOL x QTY, return order response dict"""
+
+  The functions should:
+
+  * Build the JSON payload.
+  * POST to Alpaca's orders endpoint.
+  * Return the parsed JSON of the response.
+
+5. main.py loop:
+
+* Import go_long and go_short.
+* While True:
+  cmd = input("> ").strip().lower()
+  if cmd == "long": call go_long(), print the order id and status.
+  elif cmd == "short": call go_short(), print the order id and status.
+  else: print("unknown command")
+* Never exit unless I Ctrl+C.
+
+6. Error handling:
+
+* If Alpaca rejects the order (ex: insufficient buying power), catch that and print the error message but DO NOT crash the program. Then keep listening.
+* If the request itself fails (HTTP error), print the HTTP status and response text.
+
+7. requirements.txt:
+
+* Include any third-party libs you use (for example `requests`). Keep the dependency list as short as possible. Don't add giant frameworks.
+
+8. README.md:
+   Write clear step-by-step usage for a non-coder:
+   Step 1. Install Python 3 if I don't have it.
+   Step 2. `pip install -r requirements.txt`
+   Step 3. Edit config.py with my Alpaca paper API keys and base URL.
+   Step 4. Run `python3 main.py`
+   Step 5. Type `long` or `short` then Enter to fire real orders.
+
+9. Quality rules:
+
+* All code must be valid Python 3.
+* All imports must resolve within this project.
+* The code MUST assume I'm using Alpaca PAPER trading, not live.
+* The POST order endpoint MUST follow Alpaca's latest paper trading REST format for market orders.
+
+10. Deliverables:
+    Respond with ALL file contents, each in its own fenced code block, in this order:
+11. config.py
+12. broker.py
+13. main.py
+14. requirements.txt
+15. README.md
+
+After that, STOP. Do not add commentary beyond the code and README.
+
+Remember: this tool is for extremely fast manual execution. I type `short` and press Enter and it should immediately send a paper trading short order to Alpaca.
